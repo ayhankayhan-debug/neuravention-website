@@ -11,6 +11,7 @@ on:
 jobs:
   backup:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Install PostgreSQL client (pg_dump)
@@ -19,21 +20,39 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Create Supabase dump (custom format)
+      - name: Resolve Supabase DB hostname to IPv4 (avoid IPv6)
         env:
           PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          HOST="db.${PROJECT_REF}.supabase.co"
+
+          # Get IPv4 only
+          IPV4="$(getent ahostsv4 "$HOST" | awk '{print $1; exit}')"
+
+          if [ -z "$IPV4" ]; then
+            echo "Could not resolve IPv4 for $HOST"
+            getent ahosts "$HOST" || true
+            exit 1
+          fi
+
+          echo "SUPABASE_DB_HOST_IPV4=$IPV4" >> "$GITHUB_ENV"
+          echo "Resolved $HOST -> $IPV4"
+
+      - name: Create Supabase dump (custom format)
+        env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           PGSSLMODE: require
+          DB_HOST_IPV4: ${{ env.SUPABASE_DB_HOST_IPV4 }}
         run: |
           set -euo pipefail
 
           TS="$(date -u +'%Y-%m-%d_%H-%M-%S')"
           OUT="supabase_backup_${TS}.dump"
-
           echo "OUT_FILE=$OUT" >> "$GITHUB_ENV"
 
           pg_dump \
-            -h "db.${PROJECT_REF}.supabase.co" \
+            -h "$DB_HOST_IPV4" \
             -p 5432 \
             -U postgres \
             -d postgres \
