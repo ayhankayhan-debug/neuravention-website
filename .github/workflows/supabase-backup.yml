@@ -1,12 +1,7 @@
-name: Supabase DB Backup (pg_dump via Supavisor Session Pooler)
+name: Supabase Backup (Pooler - Session 5432)
 
 on:
   workflow_dispatch:
-    inputs:
-      note:
-        description: "Why are you taking this backup?"
-        required: false
-        default: "pre-live snapshot"
 
 jobs:
   backup:
@@ -20,7 +15,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Create Supabase dump (custom format) using Session Pooler
+      - name: Preflight (confirm pooler host + IPv4 resolution)
         env:
           PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
           POOLER_HOST: ${{ secrets.SUPABASE_POOLER_HOST }}
@@ -29,12 +24,38 @@ jobs:
         run: |
           set -euo pipefail
 
+          if [ -z "${PROJECT_REF}" ]; then echo "ERROR: missing SUPABASE_PROJECT_REF"; exit 1; fi
+          if [ -z "${POOLER_HOST}" ]; then echo "ERROR: missing SUPABASE_POOLER_HOST"; exit 1; fi
+          if [ -z "${PGPASSWORD}" ]; then echo "ERROR: missing SUPABASE_DB_PASSWORD"; exit 1; fi
+
+          # POOLER_HOST sadece hostname olmalı (port/path yok)
+          if echo "$POOLER_HOST" | grep -Eq '[:/]'; then
+            echo "ERROR: SUPABASE_POOLER_HOST must be hostname only (no :port or /path). Current: $POOLER_HOST"
+            exit 1
+          fi
+
+          echo "✅ Using pooler host: $POOLER_HOST"
+          echo "✅ Resolving IPv4 for pooler host:"
+          getent ahostsv4 "$POOLER_HOST" | head -n 5 || true
+
+      - name: Create Supabase dump (custom format) via Session Pooler (5432)
+        env:
+          PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          POOLER_HOST: ${{ secrets.SUPABASE_POOLER_HOST }}
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          PGSSLMODE: require
+          PGCONNECT_TIMEOUT: "20"
+        run: |
+          set -euo pipefail
+
           TS="$(date -u +'%Y-%m-%d_%H-%M-%S')"
           OUT="supabase_backup_${TS}.dump"
           echo "OUT_FILE=$OUT" >> "$GITHUB_ENV"
 
-          # Supavisor Session mode: port 5432, user is postgres.<project_ref>
+          # Supavisor Session mode user format
           PGUSER="postgres.${PROJECT_REF}"
+
+          echo "✅ pg_dump target => host=$POOLER_HOST port=5432 user=$PGUSER db=postgres"
 
           pg_dump \
             -h "$POOLER_HOST" \
