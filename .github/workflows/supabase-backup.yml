@@ -1,4 +1,4 @@
-name: Supabase Backup (Pooler - Session 5432)
+name: backup
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Preflight (confirm pooler host + IPv4 resolution)
+      - name: Preflight (confirm pooler host + IPv4)
         env:
           PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
           POOLER_HOST: ${{ secrets.SUPABASE_POOLER_HOST }}
@@ -35,7 +35,7 @@ jobs:
           fi
 
           echo "✅ Using pooler host: $POOLER_HOST"
-          echo "✅ Resolving IPv4 for pooler host:"
+          echo "✅ Resolving IPv4:"
           getent ahostsv4 "$POOLER_HOST" | head -n 5 || true
 
       - name: Create Supabase dump (custom format) via Session Pooler (5432)
@@ -52,7 +52,7 @@ jobs:
           OUT="supabase_backup_${TS}.dump"
           echo "OUT_FILE=$OUT" >> "$GITHUB_ENV"
 
-          # Supavisor Session mode user format
+          # Supavisor Session mode user format:
           PGUSER="postgres.${PROJECT_REF}"
 
           echo "✅ pg_dump target => host=$POOLER_HOST port=5432 user=$PGUSER db=postgres"
