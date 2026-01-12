@@ -1,4 +1,4 @@
-name: Supabase DB Backup (pg_dump)
+name: Supabase DB Backup (pg_dump via Supavisor Session Pooler)
 
 on:
   workflow_dispatch:
@@ -20,30 +20,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Resolve Supabase DB hostname to IPv4 (avoid IPv6)
+      - name: Create Supabase dump (custom format) using Session Pooler
         env:
           PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-        run: |
-          set -euo pipefail
-          HOST="db.${PROJECT_REF}.supabase.co"
-
-          # Get IPv4 only
-          IPV4="$(getent ahostsv4 "$HOST" | awk '{print $1; exit}')"
-
-          if [ -z "$IPV4" ]; then
-            echo "Could not resolve IPv4 for $HOST"
-            getent ahosts "$HOST" || true
-            exit 1
-          fi
-
-          echo "SUPABASE_DB_HOST_IPV4=$IPV4" >> "$GITHUB_ENV"
-          echo "Resolved $HOST -> $IPV4"
-
-      - name: Create Supabase dump (custom format)
-        env:
+          POOLER_HOST: ${{ secrets.SUPABASE_POOLER_HOST }}
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           PGSSLMODE: require
-          DB_HOST_IPV4: ${{ env.SUPABASE_DB_HOST_IPV4 }}
         run: |
           set -euo pipefail
 
@@ -51,10 +33,13 @@ jobs:
           OUT="supabase_backup_${TS}.dump"
           echo "OUT_FILE=$OUT" >> "$GITHUB_ENV"
 
+          # Supavisor Session mode: port 5432, user is postgres.<project_ref>
+          PGUSER="postgres.${PROJECT_REF}"
+
           pg_dump \
-            -h "$DB_HOST_IPV4" \
+            -h "$POOLER_HOST" \
             -p 5432 \
-            -U postgres \
+            -U "$PGUSER" \
             -d postgres \
             -F c \
             --no-owner \
