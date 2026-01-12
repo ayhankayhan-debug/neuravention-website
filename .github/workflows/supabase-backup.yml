@@ -9,11 +9,11 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Install PostgreSQL client (pg_dump)
+      - name: Prepare pg_dump (Postgres 17 via Docker)
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
+          docker --version
+          docker run --rm postgres:17 pg_dump --version
 
       - name: Preflight (confirm pooler host + IPv4)
         env:
@@ -52,20 +52,27 @@ jobs:
           OUT="supabase_backup_${TS}.dump"
           echo "OUT_FILE=$OUT" >> "$GITHUB_ENV"
 
-          # Supavisor Session mode user format:
+          # Supavisor Session mode user format
           PGUSER="postgres.${PROJECT_REF}"
 
           echo "✅ pg_dump target => host=$POOLER_HOST port=5432 user=$PGUSER db=postgres"
 
-          pg_dump \
-            -h "$POOLER_HOST" \
-            -p 5432 \
-            -U "$PGUSER" \
-            -d postgres \
-            -F c \
-            --no-owner \
-            --no-acl \
-            -f "$OUT"
+          docker run --rm \
+            -e PGPASSWORD="$PGPASSWORD" \
+            -e PGSSLMODE="$PGSSLMODE" \
+            -e PGCONNECT_TIMEOUT="$PGCONNECT_TIMEOUT" \
+            -v "$PWD:/work" \
+            -w /work \
+            postgres:17 \
+            pg_dump \
+              -h "$POOLER_HOST" \
+              -p 5432 \
+              -U "$PGUSER" \
+              -d postgres \
+              -F c \
+              --no-owner \
+              --no-acl \
+              -f "$OUT"
 
           ls -lh "$OUT"
 
